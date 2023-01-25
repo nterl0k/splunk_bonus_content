@@ -1,4 +1,4 @@
-# splunk_bonus_content
+# Splunk Bonus Content
 A collection of random Splunk content, mostly security or Enterprise Security focused. It's probably going to look like a mess here because reasons...
 
 [Dashboards]
