@@ -1,0 +1,713 @@
+<form version="1.1" script="SA-Investigator:tabs.js" stylesheet="SA-Investigator:tabs.css" theme="dark">
+  <label>Notable and Analyst Review (NAR)</label>
+  <search id="baseSearch">
+    <earliest>$notable_time.earliest$</earliest>
+    <latest>$notable_time.latest$</latest>
+    <query>
+    	`notable`| search NOT (eventtype=notable_suppression-* OR suppression=*)
+    	| fillnull src,dest,user value="N/A"
+    	| eval date_hour=strftime(_time, "%H") 
+      | eval date_day=strftime(_time, "%a")
+      | eval onglass=case((date_day IN("Mon","Tue","Wed","Thu","Fri") AND date_hour&gt;=6 AND date_hour&lt;=18),"true",true(),"false")
+	    </query>
+  </search>
+  <fieldset submitButton="true" autoRun="true">
+    <input type="multiselect" token="notable_owner">
+      <label>Owner</label>
+      <delimiter> ,</delimiter>
+      <fieldForLabel>realname</fieldForLabel>
+      <fieldForValue>realname</fieldForValue>
+      <search>
+        <query>| inputlookup notable_owners_lookup</query>
+      </search>
+      <choice value="*">All</choice>
+      <default>*</default>
+      <prefix>owner_realname IN (</prefix>
+      <suffix>)</suffix>
+      <valuePrefix>"</valuePrefix>
+      <valueSuffix>"</valueSuffix>
+    </input>
+    <input type="multiselect" token="notable_status">
+      <label>Status</label>
+      <delimiter> ,</delimiter>
+      <fieldForLabel>notable_status</fieldForLabel>
+      <fieldForValue>label</fieldForValue>
+      <search>
+        <query>| inputlookup reviewstatuses_lookup | dedup label
+| where label!="Test Content"</query>
+      </search>
+      <choice value="*">All</choice>
+      <default>*</default>
+      <prefix>status_label IN (</prefix>
+      <suffix>)</suffix>
+      <valuePrefix>"</valuePrefix>
+      <valueSuffix>"</valueSuffix>
+    </input>
+    <input type="multiselect" token="notable_dispos">
+      <label>Disposition</label>
+      <fieldForLabel>label</fieldForLabel>
+      <fieldForValue>label</fieldForValue>
+      <search>
+        <query>| inputlookup disposition_lookup | dedup label</query>
+        <earliest>-24h@h</earliest>
+        <latest>now</latest>
+      </search>
+      <delimiter> ,</delimiter>
+      <choice value="*">All</choice>
+      <default>*</default>
+      <prefix>disposition_label IN (</prefix>
+      <suffix>)</suffix>
+      <valuePrefix>"</valuePrefix>
+      <valueSuffix>"</valueSuffix>
+    </input>
+    <input type="multiselect" token="notable_name">
+      <label>Notable</label>
+      <delimiter> ,</delimiter>
+      <fieldForLabel>rule_name</fieldForLabel>
+      <fieldForValue>rule_name</fieldForValue>
+      <search>
+        <query>| from inputlookup:incident_review_lookup | dedup rule_name | table rule_name | sort rule_name</query>
+      </search>
+      <choice value="*">All</choice>
+      <default>*</default>
+      <prefix>rule_name IN (</prefix>
+      <suffix>)</suffix>
+      <valuePrefix>"</valuePrefix>
+      <valueSuffix>"</valueSuffix>
+    </input>
+    <input type="dropdown" token="content_type">
+      <label>Content Type</label>
+      <choice value="status_label!=&quot;Test Content&quot;">Production</choice>
+      <choice value="status_label=&quot;Test Content&quot;">Test</choice>
+      <choice value="*">All</choice>
+      <default>status_label!="Test Content"</default>
+    </input>
+    <input type="dropdown" token="onglass_toggle">
+      <label>On Glass Time</label>
+      <choice value="true">Yes</choice>
+      <choice value="false">No</choice>
+      <choice value="*">All</choice>
+      <default>*</default>
+    </input>
+    <input type="time" token="notable_time">
+      <label>Time</label>
+      <default>
+        <earliest>-24h@h</earliest>
+        <latest>now</latest>
+      </default>
+    </input>
+    <html>
+        <br/>
+      </html>
+    <input type="text" token="notable_user">
+      <label>User</label>
+      <default>*</default>
+      <prefix>user=</prefix>
+    </input>
+    <input type="text" token="notable_src">
+      <label>Source</label>
+      <default>*</default>
+      <prefix>src=</prefix>
+    </input>
+    <input type="text" token="notable_dest">
+      <label>Destination</label>
+      <default>*</default>
+      <prefix>dest=</prefix>
+    </input>
+    <input type="text" token="notable_kw">
+      <label>Keyword</label>
+      <default>*</default>
+    </input>
+  </fieldset>
+  <row id="tabs">
+    <panel>
+      <html>
+				<ul id="tabs" class="nav nav-tabs">
+                    <li class="active">
+                        <a href="#" class="toggle-tab" data-toggle="tab" data-elements="tab_overview_1,tab_overview_2,tab_overview_3" data-token="control_overview">Overview</a>
+                    </li>
+					          <li>
+						            <a href="#" class="toggle-tab" data-toggle="tab" data-elements="tab_a_detail_1,tab_a_detail_2,tab_a_detail_3" data-token="control_analyst_detail">Analyst Details</a>
+					          </li>
+					          <li>
+						            <a href="#" class="toggle-tab" data-toggle="tab" data-elements="tab_n_detail_1,tab_n_detail_2,tab_n_detail_3" data-token="control_notable_detail">Notable Details</a>
+					          </li>					          
+				</ul>
+			</html>
+    </panel>
+  </row>
+  <row id="tab_overview_1">
+    <panel>
+      <chart id="notables_overtime_1">
+        <title>Notables - Over Time</title>
+        <search base="baseSearch">
+          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $notable_user$ $notable_src$ $notable_dest$ (comment IN ($notable_kw|s$) OR src IN ($notable_kw|s$) OR dest IN ($notable_kw|s$) OR user IN ($notable_kw|s$)) onglass=$onglass_toggle|s$
+| search $content_type$
+| timechart count usenull=false limit=20 span=1d
+| eventstats avg("count") as "average"</query>
+        </search>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleX.text">time</option>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.text">count</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisX.abbreviation">none</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.abbreviation">none</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.axisY2.abbreviation">none</option>
+        <option name="charting.axisY2.enabled">0</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+        <option name="charting.chart.nullValueMode">zero</option>
+        <option name="charting.chart.showDataLabels">minmax</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.layout.splitSeries.allowIndependentYRanges">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.mode">standard</option>
+        <option name="charting.legend.placement">right</option>
+        <option name="charting.lineWidth">2</option>
+        <option name="refresh.display">progressbar</option>
+        <option name="trellis.enabled">0</option>
+        <option name="trellis.scales.shared">1</option>
+        <option name="trellis.size">medium</option>
+      </chart>
+    </panel>
+    <panel>
+      <chart id="notables_overtime_analyst">
+        <title>Notables - Over Time By Owner</title>
+        <search base="baseSearch">
+          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $notable_user$ $notable_src$ $notable_dest$ (comment IN ($notable_kw|s$) OR src IN ($notable_kw|s$) OR dest IN ($notable_kw|s$) OR user IN ($notable_kw|s$)) onglass=$onglass_toggle|s$
+| search $content_type$
+| eval _time=mvindex(review_time,-1)
+| timechart count by owner usenull=false limit=20</query>
+        </search>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleX.text">time</option>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.text">count</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisX.abbreviation">none</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.abbreviation">none</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.axisY2.abbreviation">none</option>
+        <option name="charting.axisY2.enabled">0</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+        <option name="charting.chart.nullValueMode">zero</option>
+        <option name="charting.chart.showDataLabels">all</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.layout.splitSeries.allowIndependentYRanges">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.mode">standard</option>
+        <option name="charting.legend.placement">right</option>
+        <option name="charting.lineWidth">2</option>
+        <option name="refresh.display">progressbar</option>
+        <option name="trellis.enabled">0</option>
+        <option name="trellis.scales.shared">1</option>
+        <option name="trellis.size">medium</option>
+        <drilldown>
+          <link target="_blank">/app/SplunkEnterpriseSecuritySuite/incident_review?owner=$click.name2$&amp;earliest=$notable_time.earliest$&amp;latest=$notable_time.latest$</link>
+        </drilldown>
+      </chart>
+    </panel>
+  </row>
+  <row id="tab_overview_2">
+    <panel>
+      <chart id="notables_by_status">
+        <title>Notable - Events By Status</title>
+        <search base="baseSearch">
+          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $notable_user$ $notable_src$ $notable_dest$ (comment IN ($notable_kw|s$) OR src IN ($notable_kw|s$) OR dest IN ($notable_kw|s$) OR user IN ($notable_kw|s$)) onglass=$onglass_toggle|s$
+| search $content_type$
+| eval workload = case(status_default="true","Pending Triage",status_default="false" AND status_end="false", "Under Investigation",status_end="true","Investigated")
+| stats count by workload
+| `sort_chart`</query>
+        </search>
+        <option name="charting.axisLabelsX.integerUnits">1</option>
+        <option name="charting.axisTitleX.text">status</option>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.text">count</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.chart">pie</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.fieldColors">{"critical": 0xD25B3B, "high": 0xFF8800, "medium": 0xF0BE1B, "low": 0x98BF3B, "informational": 0x5378AD, "unknown": 0x999999}</option>
+        <option name="charting.legend.placement">right</option>
+        <option name="refresh.display">progressbar</option>
+        <option name="trellis.enabled">0</option>
+        <drilldown target="_blank">
+          <eval token="workloadrev">case($click.value$="Pending Triage","status_default=true",$click.value$="Under Investigation","status_default=false AND status_end=false",$click.value$="Investigated","status_end=true",true(),"*")</eval>
+          <link>/app/SplunkEnterpriseSecuritySuite/incident_review?earliest=$notable_time.earliest$&amp;latest=$notable_time.latest$&amp;search=$workloadrev$</link>
+        </drilldown>
+      </chart>
+    </panel>
+    <panel>
+      <chart id="notables_by_owner">
+        <title>Notables - Count By Owner</title>
+        <search base="baseSearch">
+          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $notable_user$ $notable_src$ $notable_dest$ (comment IN ($notable_kw|s$) OR src IN ($notable_kw|s$) OR dest IN ($notable_kw|s$) OR user IN ($notable_kw|s$)) onglass=$onglass_toggle|s$
+| search $content_type$            
+| chart count by owner 
+| eval series=owner
+| chart values(count) over owner by series limit=0
+| `sort_chart`</query>
+        </search>
+        <option name="charting.axisLabelsX.integerUnits">1</option>
+        <option name="charting.axisTitleX.text">owner</option>
+        <option name="charting.axisTitleY.text">count</option>
+        <option name="charting.chart">column</option>
+        <option name="charting.chart.showDataLabels">all</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.fieldColors">{"critical": 0xD25B3B, "high": 0xFF8800, "medium": 0xF0BE1B, "low": 0x98BF3B, "informational": 0x5378AD, "unknown": 0x999999}</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="refresh.display">progressbar</option>
+        <drilldown>
+          <link target="_blank">/app/SplunkEnterpriseSecuritySuite/incident_review?owner=$row.owner$&amp;earliest=$notable_time.earliest$&amp;latest=$notable_time.latest$</link>
+        </drilldown>
+      </chart>
+    </panel>
+  </row>
+  <row id="tab_overview_3">
+    <panel>
+      <chart id="notables_by_disposition">
+        <title>Notables - Count By Closure Disposition</title>
+        <search base="baseSearch">
+          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $notable_user$ $notable_src$ $notable_dest$ (comment IN ($notable_kw|s$) OR src IN ($notable_kw|s$) OR dest IN ($notable_kw|s$) OR user IN ($notable_kw|s$)) onglass=$onglass_toggle|s$
+| search $content_type$            
+| chart count by disposition_label 
+| eval series=disposition_label
+| chart values(count) over disposition_label by series limit=0
+| `sort_chart`</query>
+        </search>
+        <option name="charting.axisLabelsX.integerUnits">1</option>
+        <option name="charting.axisTitleX.text">Disposition</option>
+        <option name="charting.axisTitleY.text">count</option>
+        <option name="charting.chart">column</option>
+        <option name="charting.chart.showDataLabels">all</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.fieldColors">{"critical": 0xD25B3B, "high": 0xFF8800, "medium": 0xF0BE1B, "low": 0x98BF3B, "informational": 0x5378AD, "unknown": 0x999999}</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="refresh.display">progressbar</option>
+        <drilldown>
+          <link target="_blank">/app/SplunkEnterpriseSecuritySuite/incident_review?owner=$row.owner$&amp;earliest=$notable_time.earliest$&amp;latest=$notable_time.latest$</link>
+        </drilldown>
+      </chart>
+    </panel>
+  </row>
+  <row id="tab_a_detail_1">
+    <panel>
+      <title>Reviewers - By Volume</title>
+      <table id="analyst_by_count">
+        <search base="baseSearch">
+          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $notable_user$ $notable_src$ $notable_dest$ (comment IN ($notable_kw|s$) OR src IN ($notable_kw|s$) OR dest IN ($notable_kw|s$) OR user IN ($notable_kw|s$)) onglass=$onglass_toggle|s$
+         | search $content_type$
+          | eval firstReview=mvindex(review_time,0) 
+          | eval lastReview=mvindex(review_time,-1)
+          | rename firstReview as _time
+          | stats sparkline, count by owner_realname,owner
+          | sort - count
+          | where isnotnull(firstTime) OR owner_realname!="unassigned"</query>
+        </search>
+        <option name="dataOverlayMode">none</option>
+        <option name="drilldown">row</option>
+        <option name="percentagesRow">false</option>
+        <option name="refresh.display">progressbar</option>
+        <option name="rowNumbers">false</option>
+        <option name="totalsRow">false</option>
+        <option name="wrap">true</option>
+        <drilldown>
+          <link target="_blank">/app/SplunkEnterpriseSecuritySuite/incident_review?owner=$row.owner$&amp;earliest=$notable_time.earliest$&amp;latest=$notable_time.latest$</link>
+        </drilldown>
+      </table>
+    </panel>
+    <panel>
+      <title>Reviewer - By Mean Time To Triage</title>
+      <table id="analyst_by_mttt">
+        <search base="baseSearch">
+          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $notable_user$ $notable_src$ $notable_dest$ (comment IN ($notable_kw|s$) OR src IN ($notable_kw|s$) OR dest IN ($notable_kw|s$) OR user IN ($notable_kw|s$)) onglass=$onglass_toggle|s$
+| search $content_type$            
+| search NOT status_label IN ("new","unassigned","test content")
+| eval firstReview=mvindex(review_time,-1) 
+| eval lastReview=mvindex(review_time,0)
+| eval ttt= firstReview - _time
+| stats count,avg(ttt) as avg_ttt,max(ttt) as max_ttt by owner_realname,owner
+| sort - avg_ttt 
+| `uptime2string(avg_ttt, avg_ttt)` 
+| `uptime2string(max_ttt, max_ttt)` 
+| rename *_ttt* as *(time_to_triage)* 
+| fields - *_dec</query>
+        </search>
+        <option name="dataOverlayMode">none</option>
+        <option name="drilldown">row</option>
+        <option name="percentagesRow">false</option>
+        <option name="refresh.display">progressbar</option>
+        <option name="rowNumbers">false</option>
+        <option name="totalsRow">false</option>
+        <option name="wrap">true</option>
+        <drilldown>
+          <link target="_blank">/app/SplunkEnterpriseSecuritySuite/incident_review?owner=$row.owner$&amp;earliest=$notable_time.earliest$&amp;latest=$notable_time.latest$</link>
+        </drilldown>
+      </table>
+    </panel>
+    <panel>
+      <title>Reviewer - By Mean Time To Close</title>
+      <table id="analyst_by_mttr">
+        <search base="baseSearch">
+          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $notable_user$ $notable_src$ $notable_dest$ (comment IN ($notable_kw|s$) OR src IN ($notable_kw|s$) OR dest IN ($notable_kw|s$) OR user IN ($notable_kw|s$)) onglass=$onglass_toggle|s$
+| search $content_type$            
+| search status_end = "true" 
+| eval firstReview=mvindex(review_time,-1) 
+| eval lastReview=mvindex(review_time,0)
+| where isnotnull(lastReview)
+| eval ttc= lastReview - firstReview
+| stats count avg(ttc) as avg_ttc,max(ttc) as max_ttc by owner_realname,owner 
+| sort - avg_ttc 
+| `uptime2string(avg_ttc, avg_ttc)` 
+| `uptime2string(max_ttc, max_ttc)` 
+| rename *_ttc* as *(time_to_closure)* 
+| fields - *_dec</query>
+        </search>
+        <option name="dataOverlayMode">none</option>
+        <option name="drilldown">row</option>
+        <option name="percentagesRow">false</option>
+        <option name="refresh.display">progressbar</option>
+        <option name="rowNumbers">false</option>
+        <option name="totalsRow">false</option>
+        <option name="wrap">true</option>
+        <drilldown>
+          <link target="_blank">/app/SplunkEnterpriseSecuritySuite/incident_review?owner=$row.owner$&amp;earliest=$notable_time.earliest$&amp;latest=$notable_time.latest$</link>
+        </drilldown>
+      </table>
+    </panel>
+  </row>
+  <row id="tab_a_detail_2">
+    <panel>
+      <title>Notables - By Mean Time To Close</title>
+      <table id="notable_by_mttr">
+        <title>Time measure from first time touched until resolved or external ticket state.</title>
+        <search base="baseSearch">
+          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $notable_user$ $notable_src$ $notable_dest$ (comment IN ($notable_kw|s$) OR src IN ($notable_kw|s$) OR dest IN ($notable_kw|s$) OR user IN ($notable_kw|s$)) onglass=$onglass_toggle|s$
+| search $content_type$            
+| search status_end = "true" 
+| eval firstReview=mvindex(review_time,-1) 
+| eval lastReview=mvindex(review_time,0)
+| where isnotnull(lastReview)
+| eval ttc= lastReview - firstReview
+| stats count avg(ttc) as avg_ttc,max(ttc) as max_ttc by rule_name 
+| sort - avg_ttc 
+| `uptime2string(avg_ttc, avg_ttc)` 
+| `uptime2string(max_ttc, max_ttc)` 
+| rename *_ttc* as *(time_to_closure)* 
+| fields - *_dec
+| head 10</query>
+        </search>
+        <option name="dataOverlayMode">none</option>
+        <option name="drilldown">row</option>
+        <option name="percentagesRow">false</option>
+        <option name="refresh.display">progressbar</option>
+        <option name="rowNumbers">false</option>
+        <option name="totalsRow">false</option>
+        <option name="wrap">true</option>
+        <drilldown>
+          <link>incident_review?form.rule_name=$row.rule_name$&amp;form.srch=status_label%3D"Closed"&amp;earliest=-60d@d&amp;latest=now</link>
+        </drilldown>
+      </table>
+    </panel>
+    <panel>
+      <title>Notables - Closure Disposition per Analyst</title>
+      <chart id="notables_by_analyst_by_disposition">
+        <search base="baseSearch">
+          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $notable_user$ $notable_src$ $notable_dest$ (comment IN ($notable_kw|s$) OR src IN ($notable_kw|s$) OR dest IN ($notable_kw|s$) OR user IN ($notable_kw|s$)) onglass=$onglass_toggle|s$
+| search $content_type$            
+| chart count over owner by disposition_label
+| `sort_chart`</query>
+        </search>
+        <option name="charting.axisLabelsX.integerUnits">1</option>
+        <option name="charting.axisTitleX.text">Disposition</option>
+        <option name="charting.axisTitleY.text">count</option>
+        <option name="charting.chart">column</option>
+        <option name="charting.chart.showDataLabels">all</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.fieldColors">{"critical": 0xD25B3B, "high": 0xFF8800, "medium": 0xF0BE1B, "low": 0x98BF3B, "informational": 0x5378AD, "unknown": 0x999999}</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="height">414</option>
+        <option name="refresh.display">progressbar</option>
+        <drilldown>
+          <link target="_blank">/app/SplunkEnterpriseSecuritySuite/incident_review?owner=$row.owner$&amp;earliest=$notable_time.earliest$&amp;latest=$notable_time.latest$</link>
+        </drilldown>
+      </chart>
+    </panel>
+  </row>
+  <row id="tab_a_detail_3">
+    <panel>
+      <table id="analyst_by_details">
+        <title>Reviewer - Detailed Activity</title>
+        <search base="baseSearch">
+          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $notable_user$ $notable_src$ $notable_dest$ (comment IN ($notable_kw|s$) OR src IN ($notable_kw|s$) OR dest IN ($notable_kw|s$) OR user IN ($notable_kw|s$)) onglass=$onglass_toggle|s$
+| search $content_type$            
+| search comment="*"
+| eval firstReview=mvindex(review_time,-1) 
+| eval lastReview=mvindex(review_time,0)
+| eval lastComment=mvindex(comment,-1)
+| stats latest(status_label) as status latest(status_end) as end latest(disposition_label) as disposition list(comment) as comment dc(comment) as comment_count min(firstReview) as firstReview max(lastReview) as lastReview values(owner_realname) as owner_realname list(reviewer) as reviewers dc(reviewer) as reviewer_count by rule_name rule_id _time
+| eval SecondsTriage = firstReview - _time
+| eval SecondsTotal = lastReview - firstReview
+| eval MinTriage = SecondsTriage / 60
+| eval MinTotal = SecondsTotal / 60
+| `uptime2string(SecondsTriage, TimeTriage)` 
+| `uptime2string(SecondsTotal, TimeTotal)` 
+| table _time,rule_name, owner_realname, reviewers, reviewer_count, comment, comment_count, status, disposition, TimeTriage, TimeTotal, rule_id
+| rename TimeTriage as Time_to_Triage, TimeTotal as Time_to_Close
+| sort - _time</query>
+        </search>
+        <option name="dataOverlayMode">none</option>
+        <option name="drilldown">row</option>
+        <option name="percentagesRow">false</option>
+        <option name="refresh.display">progressbar</option>
+        <option name="rowNumbers">false</option>
+        <option name="totalsRow">false</option>
+        <option name="wrap">true</option>
+        <drilldown>
+          <link target="_blank">/app/SplunkEnterpriseSecuritySuite/incident_review?earliest=$notable_time.earliest$&amp;latest=$notable_time.latest$&amp;search=rule_id%3D$row.rule_id$</link>
+        </drilldown>
+      </table>
+    </panel>
+  </row>
+  <row id="tab_n_detail_1">
+    <panel>
+      <chart id="notables_overtime_2">
+        <title>Notables - Total Over Time</title>
+        <search base="baseSearch">
+          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $notable_user$ $notable_src$ $notable_dest$ (comment IN ($notable_kw|s$) OR src IN ($notable_kw|s$) OR dest IN ($notable_kw|s$) OR user IN ($notable_kw|s$)) onglass=$onglass_toggle|s$
+| search $content_type$
+| timechart count usenull=false limit=20 span=1d
+| eventstats avg("count") as "average"</query>
+        </search>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleX.text">time</option>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.text">count</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisX.abbreviation">none</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.abbreviation">none</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.axisY2.abbreviation">none</option>
+        <option name="charting.axisY2.enabled">0</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+        <option name="charting.chart.nullValueMode">zero</option>
+        <option name="charting.chart.showDataLabels">minmax</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.layout.splitSeries.allowIndependentYRanges">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.mode">standard</option>
+        <option name="charting.legend.placement">right</option>
+        <option name="charting.lineWidth">2</option>
+        <option name="refresh.display">progressbar</option>
+        <option name="trellis.enabled">0</option>
+        <option name="trellis.scales.shared">1</option>
+        <option name="trellis.size">medium</option>
+      </chart>
+    </panel>
+    <panel>
+      <chart id="notables_overtime_3">
+        <title>Notables - Top 10 Over Time</title>
+        <search base="baseSearch">
+          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $notable_user$ $notable_src$ $notable_dest$ (comment IN ($notable_kw|s$) OR src IN ($notable_kw|s$) OR dest IN ($notable_kw|s$) OR user IN ($notable_kw|s$)) onglass=$onglass_toggle|s$
+| search $content_type$
+| timechart count by rule_name usenull=false useother=false limit=10 span=1d
+| sort - count</query>
+        </search>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleX.text">time</option>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.text">count</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisX.abbreviation">none</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.abbreviation">none</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.axisY2.abbreviation">none</option>
+        <option name="charting.axisY2.enabled">0</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+        <option name="charting.chart.nullValueMode">zero</option>
+        <option name="charting.chart.showDataLabels">minmax</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">all</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.layout.splitSeries.allowIndependentYRanges">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.mode">standard</option>
+        <option name="charting.legend.placement">right</option>
+        <option name="charting.lineWidth">2</option>
+        <option name="refresh.display">progressbar</option>
+        <option name="trellis.enabled">0</option>
+        <option name="trellis.scales.shared">1</option>
+        <option name="trellis.size">medium</option>
+      </chart>
+    </panel>
+  </row>
+  <row id="tab_n_detail_2">
+    <panel>
+      <table id="notable_by_count">
+        <title>Notables - By Volume</title>
+        <search base="baseSearch">
+          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $notable_user$ $notable_src$ $notable_dest$ (comment IN ($notable_kw|s$) OR src IN ($notable_kw|s$) OR dest IN ($notable_kw|s$) OR user IN ($notable_kw|s$)) onglass=$onglass_toggle|s$
+| search $content_type$
+| top 50 rule_name
+| fields rule_name count</query>
+        </search>
+        <option name="dataOverlayMode">none</option>
+        <option name="drilldown">row</option>
+        <option name="percentagesRow">false</option>
+        <option name="refresh.display">progressbar</option>
+        <option name="rowNumbers">false</option>
+        <option name="totalsRow">false</option>
+        <option name="wrap">true</option>
+        <drilldown>
+          <link target="_blank">/app/SplunkEnterpriseSecuritySuite/incident_review?source=$row.rule_name$&amp;earliest=$notable_time.earliest$&amp;latest=$notable_time.latest$</link>
+        </drilldown>
+      </table>
+    </panel>
+    <panel>
+      <table id="notable_by_src">
+        <title>Notable - By Source</title>
+        <search base="baseSearch">
+          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $notable_user$ $notable_src$ $notable_dest$ (comment IN ($notable_kw|s$) OR src IN ($notable_kw|s$) OR dest IN ($notable_kw|s$) OR user IN ($notable_kw|s$)) onglass=$onglass_toggle|s$
+| search $content_type$
+| search src!="N/A"            
+| top 50 src
+| fields src count</query>
+        </search>
+        <option name="dataOverlayMode">none</option>
+        <option name="drilldown">row</option>
+        <option name="percentagesRow">false</option>
+        <option name="refresh.display">progressbar</option>
+        <option name="rowNumbers">false</option>
+        <option name="totalsRow">false</option>
+        <option name="wrap">true</option>
+        <drilldown>
+          <link target="_blank">/app/SplunkEnterpriseSecuritySuite/incident_review?search=$row.src$&amp;earliest=$notable_time.earliest$&amp;latest=$notable_time.latest$</link>
+        </drilldown>
+      </table>
+    </panel>
+    <panel>
+      <table id="notable_by_dest">
+        <title>Notable - By Destination</title>
+        <search base="baseSearch">
+          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $notable_user$ $notable_src$ $notable_dest$ (comment IN ($notable_kw|s$) OR src IN ($notable_kw|s$) OR dest IN ($notable_kw|s$) OR user IN ($notable_kw|s$)) onglass=$onglass_toggle|s$
+| search $content_type$
+| search dest!="N/A"            
+| top 50 dest
+| fields dest count</query>
+        </search>
+        <option name="dataOverlayMode">none</option>
+        <option name="drilldown">row</option>
+        <option name="percentagesRow">false</option>
+        <option name="refresh.display">progressbar</option>
+        <option name="rowNumbers">false</option>
+        <option name="totalsRow">false</option>
+        <option name="wrap">true</option>
+        <drilldown>
+          <link target="_blank">/app/SplunkEnterpriseSecuritySuite/incident_review?search=$row.dest$&amp;earliest=$notable_time.earliest$&amp;latest=$notable_time.latest$</link>
+        </drilldown>
+      </table>
+    </panel>
+    <panel>
+      <table id="notable_by_user">
+        <title>Notable - By User</title>
+        <search base="baseSearch">
+          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $notable_user$ $notable_src$ $notable_dest$ (comment IN ($notable_kw|s$) OR src IN ($notable_kw|s$) OR dest IN ($notable_kw|s$) OR user IN ($notable_kw|s$)) onglass=$onglass_toggle|s$
+| search $content_type$
+| search user!="N/A"            
+| top 50 user
+| fields user count</query>
+        </search>
+        <option name="dataOverlayMode">none</option>
+        <option name="drilldown">row</option>
+        <option name="percentagesRow">false</option>
+        <option name="refresh.display">progressbar</option>
+        <option name="rowNumbers">false</option>
+        <option name="totalsRow">false</option>
+        <option name="wrap">true</option>
+        <drilldown>
+          <link target="_blank">/app/SplunkEnterpriseSecuritySuite/incident_review?search=$row.user$&amp;earliest=$notable_time.earliest$&amp;latest=$notable_time.latest$</link>
+        </drilldown>
+      </table>
+    </panel>
+  </row>
+  <row id="tab_n_detail_3">
+    <panel>
+      <table id="notables_by_details">
+        <title>Notables - Detailed Activity</title>
+        <search base="baseSearch">
+          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $notable_user$ $notable_src$ $notable_dest$ (comment IN ($notable_kw|s$) OR src IN ($notable_kw|s$) OR dest IN ($notable_kw|s$) OR user IN ($notable_kw|s$)) onglass=$onglass_toggle|s$
+| search $content_type$            
+| eval firstReview=mvindex(review_time,-1) 
+| eval lastReview=mvindex(review_time,0)
+| eval lastComment=mvindex(comment,-1)
+| stats values(src) as src values(dest) as dest values(user) as user latest(status_label) as status latest(status_end) as end latest(disposition_label) as disposition latest(comment) as comment dc(comment) as comment_count min(firstReview) as firstReview max(lastReview) as lastReview values(owner_realname) as owner_realname by rule_name rule_id _time
+| eval SecondsTriage = firstReview - _time
+| eval SecondsTotal = lastReview - firstReview
+| eval MinTriage = SecondsTriage / 60
+| eval MinTotal = SecondsTotal / 60
+| `uptime2string(SecondsTriage, TimeTriage)` 
+| `uptime2string(SecondsTotal, TimeTotal)` 
+| table _time,rule_name, src, dest, user, status, disposition, , owner_realname, comment, rule_id
+| sort - _time</query>
+        </search>
+        <option name="dataOverlayMode">none</option>
+        <option name="drilldown">row</option>
+        <option name="percentagesRow">false</option>
+        <option name="refresh.display">progressbar</option>
+        <option name="rowNumbers">false</option>
+        <option name="totalsRow">false</option>
+        <option name="wrap">true</option>
+        <drilldown>
+          <link target="_blank">/app/SplunkEnterpriseSecuritySuite/incident_review?earliest=$notable_time.earliest$&amp;latest=$notable_time.latest$&amp;search=rule_id%3D$row.rule_id$</link>
+        </drilldown>
+      </table>
+    </panel>
+  </row>
+</form>
