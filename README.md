@@ -3,14 +3,18 @@ A collection of random Splunk content, mostly security or Enterprise Security fo
 
 [Dashboards]
 - Notable and Analyst Review Dashboard [Content Link]
-  - Requirements: SA-Investigator (used for tab.js/tab.css content)
-  - Small pics here
+  - Requirements: 
+    - SA-Investigator (used for tab.js/tab.css content)
+  - Optional / Extras
+    - Includes "On Glass" and "Test Content" concession if neded.
+   
+   Small pics here
 
 [Helpful Searches]
-- Stub
+- Nothing to see here yet
 
 [Detections]
-- Stub
+- Nothing to see here yet
 
 [Random Tips]
-- More Here Later
+- Nothing to see here yet
