@@ -43,5 +43,7 @@ A rough effort at pulling forward analyst and notable metrics for team/detection
     - How often they fire
     - How long it takes to triage/remediate them
       - Count over time for trending
+      - Top counts for various fields for tuning needs
+      - Direct search drilldowns
   - ![screenshot](https://github.com/nterl0k/splunk_bonus_content/blob/main/dashboards/notable_and_analyst_review/notable_details_1.png)
 
