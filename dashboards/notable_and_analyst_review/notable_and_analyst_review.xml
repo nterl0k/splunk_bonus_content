@@ -4,8 +4,9 @@
     <earliest>$notable_time.earliest$</earliest>
     <latest>$notable_time.latest$</latest>
     <query>
-    	`notable`| search NOT (eventtype=notable_suppression-* OR suppression=*)
-    	| fillnull src,dest,user value="N/A"
+    	`notable`
+    	| search NOT (eventtype=notable_suppression-* OR suppression=*)
+    	| fields *
     	| eval date_hour=strftime(_time, "%H") 
       | eval date_day=strftime(_time, "%a")
       | eval onglass=case((date_day IN("Mon","Tue","Wed","Thu","Fri") AND date_hour&gt;=6 AND date_hour&lt;=18),"true",true(),"false")
@@ -99,24 +100,67 @@
     <html>
         <br/>
       </html>
-    <input type="text" token="notable_user">
+    <input type="text" token="user_dm">
       <label>User</label>
-      <default>*</default>
-      <prefix>user=</prefix>
+      <default></default>
+      <change>
+        <unset token="form.user_ident"></unset>
+      </change>
     </input>
-    <input type="text" token="notable_src">
+    <input type="dropdown" token="user_ident" searchWhenChanged="true">
+      <label>Correlated Identities</label>
+      <search>
+        <query>| `reverse_identity_lookup("$user_dm$")` | append [ | makeresults | eval key="$user_dm$" | eval seed="$user_dm$" ] | dedup key | rex field=identity mode=sed "s/\\\/\\\\\\\/" | eval user_ident=if(isnull(identity),seed,mvjoin(identity, ",")) | table user_ident</query>
+        <earliest>0</earliest>
+        <latest></latest>
+      </search>
+      <selectFirstChoice>true</selectFirstChoice>
+      <fieldForLabel>user_ident</fieldForLabel>
+      <fieldForValue>user_ident</fieldForValue>
+      <change>
+        <condition match="len($value$) &gt; 0">
+          <set token="user_ident" submit="false">(user IN ($value$))</set>
+        </condition>
+        <condition match="len($value$) == 0">
+          <set token="user_ident" submit="false"></set>
+        </condition>
+      </change>
+    </input>
+    <input type="text" token="notable_src_form">
       <label>Source</label>
-      <default>*</default>
-      <prefix>src=</prefix>
+      <default></default>
+      <change>
+        <condition match="len($value$) &gt; 0">
+          <set token="notable_src" submit="false">src=$value$</set>
+        </condition>
+        <condition match="len($value$) == 0">
+          <set token="notable_src" submit="false"></set>
+        </condition>
+      </change>
     </input>
-    <input type="text" token="notable_dest">
+    <input type="text" token="notable_dest_form">
       <label>Destination</label>
-      <default>*</default>
-      <prefix>dest=</prefix>
+      <default></default>
+      <change>
+        <condition match="len($value$) &gt; 0">
+          <set token="notable_dest" submit="false">dest=$value$</set>
+        </condition>
+        <condition match="len($value$) == 0">
+          <set token="notable_dest" submit="false"></set>
+        </condition>
+      </change>
     </input>
-    <input type="text" token="notable_kw">
+    <input type="text" token="notable_kw_form">
       <label>Keyword</label>
-      <default>*</default>
+      <default></default>
+      <change>
+        <condition match="len($value$) &gt; 0">
+          <set token="notable_kw" submit="false">(comment IN ("*$value$*") OR src IN ("*$value$*") OR dest IN ("*$value$*") OR user IN ("*$value$*"))</set>
+        </condition>
+        <condition match="len($value$) == 0">
+          <set token="notable_kw" submit="false"></set>
+        </condition>
+      </change>
     </input>
   </fieldset>
   <row id="tabs">
@@ -130,7 +174,7 @@
 						            <a href="#" class="toggle-tab" data-toggle="tab" data-elements="tab_a_detail_1,tab_a_detail_2,tab_a_detail_3" data-token="control_analyst_detail">Analyst Details</a>
 					          </li>
 					          <li>
-						            <a href="#" class="toggle-tab" data-toggle="tab" data-elements="tab_n_detail_1,tab_n_detail_2,tab_n_detail_3" data-token="control_notable_detail">Notable Details</a>
+						            <a href="#" class="toggle-tab" data-toggle="tab" data-elements="tab_n_detail_1,tab_n_detail_2,tab_n_detail_3,tab_n_detail_4" data-token="control_notable_detail">Notable Details</a>
 					          </li>					          
 				</ul>
 			</html>
@@ -141,7 +185,7 @@
       <chart id="notables_overtime_1">
         <title>Notables - Over Time</title>
         <search base="baseSearch">
-          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $notable_user$ $notable_src$ $notable_dest$ (comment IN ($notable_kw|s$) OR src IN ($notable_kw|s$) OR dest IN ($notable_kw|s$) OR user IN ($notable_kw|s$)) onglass=$onglass_toggle|s$
+          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $user_ident$ $notable_src$ $notable_dest$ $notable_kw$ onglass=$onglass_toggle|s$
 | search $content_type$
 | timechart count usenull=false limit=20 span=1d
 | eventstats avg("count") as "average"</query>
@@ -186,7 +230,7 @@
       <chart id="notables_overtime_analyst">
         <title>Notables - Over Time By Owner</title>
         <search base="baseSearch">
-          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $notable_user$ $notable_src$ $notable_dest$ (comment IN ($notable_kw|s$) OR src IN ($notable_kw|s$) OR dest IN ($notable_kw|s$) OR user IN ($notable_kw|s$)) onglass=$onglass_toggle|s$
+          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $user_ident$ $notable_src$ $notable_dest$ $notable_kw$ onglass=$onglass_toggle|s$
 | search $content_type$
 | eval _time=mvindex(review_time,-1)
 | timechart count by owner usenull=false limit=20</query>
@@ -236,7 +280,7 @@
       <chart id="notables_by_status">
         <title>Notable - Events By Status</title>
         <search base="baseSearch">
-          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $notable_user$ $notable_src$ $notable_dest$ (comment IN ($notable_kw|s$) OR src IN ($notable_kw|s$) OR dest IN ($notable_kw|s$) OR user IN ($notable_kw|s$)) onglass=$onglass_toggle|s$
+          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $user_ident$ $notable_src$ $notable_dest$ $notable_kw$ onglass=$onglass_toggle|s$
 | search $content_type$
 | eval workload = case(status_default="true","Pending Triage",status_default="false" AND status_end="false", "Under Investigation",status_end="true","Investigated")
 | stats count by workload
@@ -265,17 +309,15 @@
       <chart id="notables_by_owner">
         <title>Notables - Count By Owner</title>
         <search base="baseSearch">
-          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $notable_user$ $notable_src$ $notable_dest$ (comment IN ($notable_kw|s$) OR src IN ($notable_kw|s$) OR dest IN ($notable_kw|s$) OR user IN ($notable_kw|s$)) onglass=$onglass_toggle|s$
+          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $user_ident$ $notable_src$ $notable_dest$ $notable_kw$ onglass=$onglass_toggle|s$
 | search $content_type$            
-| chart count by owner 
-| eval series=owner
-| chart values(count) over owner by series limit=0
-| `sort_chart`</query>
+| chart count by owner
+| sort - count</query>
         </search>
         <option name="charting.axisLabelsX.integerUnits">1</option>
         <option name="charting.axisTitleX.text">owner</option>
         <option name="charting.axisTitleY.text">count</option>
-        <option name="charting.chart">column</option>
+        <option name="charting.chart">pie</option>
         <option name="charting.chart.showDataLabels">all</option>
         <option name="charting.chart.stackMode">stacked</option>
         <option name="charting.drilldown">all</option>
@@ -293,7 +335,7 @@
       <chart id="notables_by_disposition">
         <title>Notables - Count By Closure Disposition</title>
         <search base="baseSearch">
-          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $notable_user$ $notable_src$ $notable_dest$ (comment IN ($notable_kw|s$) OR src IN ($notable_kw|s$) OR dest IN ($notable_kw|s$) OR user IN ($notable_kw|s$)) onglass=$onglass_toggle|s$
+          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $user_ident$ $notable_src$ $notable_dest$ $notable_kw$ onglass=$onglass_toggle|s$
 | search $content_type$            
 | chart count by disposition_label 
 | eval series=disposition_label
@@ -321,7 +363,7 @@
       <title>Reviewers - By Volume</title>
       <table id="analyst_by_count">
         <search base="baseSearch">
-          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $notable_user$ $notable_src$ $notable_dest$ (comment IN ($notable_kw|s$) OR src IN ($notable_kw|s$) OR dest IN ($notable_kw|s$) OR user IN ($notable_kw|s$)) onglass=$onglass_toggle|s$
+          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $user_ident$ $notable_src$ $notable_dest$ $notable_kw$ onglass=$onglass_toggle|s$
          | search $content_type$
           | eval firstReview=mvindex(review_time,0) 
           | eval lastReview=mvindex(review_time,-1)
@@ -333,7 +375,6 @@
         <option name="dataOverlayMode">none</option>
         <option name="drilldown">row</option>
         <option name="percentagesRow">false</option>
-        <option name="refresh.display">progressbar</option>
         <option name="rowNumbers">false</option>
         <option name="totalsRow">false</option>
         <option name="wrap">true</option>
@@ -346,7 +387,7 @@
       <title>Reviewer - By Mean Time To Triage</title>
       <table id="analyst_by_mttt">
         <search base="baseSearch">
-          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $notable_user$ $notable_src$ $notable_dest$ (comment IN ($notable_kw|s$) OR src IN ($notable_kw|s$) OR dest IN ($notable_kw|s$) OR user IN ($notable_kw|s$)) onglass=$onglass_toggle|s$
+          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $user_ident$ $notable_src$ $notable_dest$ $notable_kw$ onglass=$onglass_toggle|s$
 | search $content_type$            
 | search NOT status_label IN ("new","unassigned","test content")
 | eval firstReview=mvindex(review_time,-1) 
@@ -375,7 +416,7 @@
       <title>Reviewer - By Mean Time To Close</title>
       <table id="analyst_by_mttr">
         <search base="baseSearch">
-          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $notable_user$ $notable_src$ $notable_dest$ (comment IN ($notable_kw|s$) OR src IN ($notable_kw|s$) OR dest IN ($notable_kw|s$) OR user IN ($notable_kw|s$)) onglass=$onglass_toggle|s$
+          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $user_ident$ $notable_src$ $notable_dest$ $notable_kw$ onglass=$onglass_toggle|s$
 | search $content_type$            
 | search status_end = "true" 
 | eval firstReview=mvindex(review_time,-1) 
@@ -408,14 +449,14 @@
       <table id="notable_by_mttr">
         <title>Time measure from first time touched until resolved or external ticket state.</title>
         <search base="baseSearch">
-          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $notable_user$ $notable_src$ $notable_dest$ (comment IN ($notable_kw|s$) OR src IN ($notable_kw|s$) OR dest IN ($notable_kw|s$) OR user IN ($notable_kw|s$)) onglass=$onglass_toggle|s$
+          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $user_ident$ $notable_src$ $notable_dest$ $notable_kw$ onglass=$onglass_toggle|s$
 | search $content_type$            
 | search status_end = "true" 
 | eval firstReview=mvindex(review_time,-1) 
 | eval lastReview=mvindex(review_time,0)
 | where isnotnull(lastReview)
 | eval ttc= lastReview - firstReview
-| stats count avg(ttc) as avg_ttc,max(ttc) as max_ttc by rule_name 
+| stats count avg(ttc) as avg_ttc,max(ttc) as max_ttc by search_title
 | sort - avg_ttc 
 | `uptime2string(avg_ttc, avg_ttc)` 
 | `uptime2string(max_ttc, max_ttc)` 
@@ -426,12 +467,11 @@
         <option name="dataOverlayMode">none</option>
         <option name="drilldown">row</option>
         <option name="percentagesRow">false</option>
-        <option name="refresh.display">progressbar</option>
         <option name="rowNumbers">false</option>
         <option name="totalsRow">false</option>
         <option name="wrap">true</option>
         <drilldown>
-          <link>incident_review?form.rule_name=$row.rule_name$&amp;form.srch=status_label%3D"Closed"&amp;earliest=-60d@d&amp;latest=now</link>
+          <link target="_blank">/app/SplunkEnterpriseSecuritySuite/incident_review?form.rule_name=$row.search_title$&amp;earliest=$notable_time.earliest$&amp;latest=$notable_time.latest$</link>
         </drilldown>
       </table>
     </panel>
@@ -439,7 +479,7 @@
       <title>Notables - Closure Disposition per Analyst</title>
       <chart id="notables_by_analyst_by_disposition">
         <search base="baseSearch">
-          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $notable_user$ $notable_src$ $notable_dest$ (comment IN ($notable_kw|s$) OR src IN ($notable_kw|s$) OR dest IN ($notable_kw|s$) OR user IN ($notable_kw|s$)) onglass=$onglass_toggle|s$
+          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $user_ident$ $notable_src$ $notable_dest$ $notable_kw$ onglass=$onglass_toggle|s$
 | search $content_type$            
 | chart count over owner by disposition_label
 | `sort_chart`</query>
@@ -466,7 +506,7 @@
       <table id="analyst_by_details">
         <title>Reviewer - Detailed Activity</title>
         <search base="baseSearch">
-          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $notable_user$ $notable_src$ $notable_dest$ (comment IN ($notable_kw|s$) OR src IN ($notable_kw|s$) OR dest IN ($notable_kw|s$) OR user IN ($notable_kw|s$)) onglass=$onglass_toggle|s$
+          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $user_ident$ $notable_src$ $notable_dest$ $notable_kw$ onglass=$onglass_toggle|s$
 | search $content_type$            
 | search comment="*"
 | eval firstReview=mvindex(review_time,-1) 
@@ -501,7 +541,7 @@
       <chart id="notables_overtime_2">
         <title>Notables - Total Over Time</title>
         <search base="baseSearch">
-          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $notable_user$ $notable_src$ $notable_dest$ (comment IN ($notable_kw|s$) OR src IN ($notable_kw|s$) OR dest IN ($notable_kw|s$) OR user IN ($notable_kw|s$)) onglass=$onglass_toggle|s$
+          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $user_ident$ $notable_src$ $notable_dest$ $notable_kw$ onglass=$onglass_toggle|s$
 | search $content_type$
 | timechart count usenull=false limit=20 span=1d
 | eventstats avg("count") as "average"</query>
@@ -546,7 +586,7 @@
       <chart id="notables_overtime_3">
         <title>Notables - Top 10 Over Time</title>
         <search base="baseSearch">
-          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $notable_user$ $notable_src$ $notable_dest$ (comment IN ($notable_kw|s$) OR src IN ($notable_kw|s$) OR dest IN ($notable_kw|s$) OR user IN ($notable_kw|s$)) onglass=$onglass_toggle|s$
+          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $user_ident$ $notable_src$ $notable_dest$ $notable_kw$ onglass=$onglass_toggle|s$
 | search $content_type$
 | timechart count by rule_name usenull=false useother=false limit=10 span=1d
 | sort - count</query>
@@ -593,10 +633,10 @@
       <table id="notable_by_count">
         <title>Notables - By Volume</title>
         <search base="baseSearch">
-          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $notable_user$ $notable_src$ $notable_dest$ (comment IN ($notable_kw|s$) OR src IN ($notable_kw|s$) OR dest IN ($notable_kw|s$) OR user IN ($notable_kw|s$)) onglass=$onglass_toggle|s$
+          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $user_ident$ $notable_src$ $notable_dest$ $notable_kw$ onglass=$onglass_toggle|s$
 | search $content_type$
-| top 50 rule_name
-| fields rule_name count</query>
+| top 50 search_title
+| fields search_title count</query>
         </search>
         <option name="dataOverlayMode">none</option>
         <option name="drilldown">row</option>
@@ -606,7 +646,7 @@
         <option name="totalsRow">false</option>
         <option name="wrap">true</option>
         <drilldown>
-          <link target="_blank">/app/SplunkEnterpriseSecuritySuite/incident_review?source=$row.rule_name$&amp;earliest=$notable_time.earliest$&amp;latest=$notable_time.latest$</link>
+          <link target="_blank">search?q=%60notable%60%0A%7C%20search%20NOT%20(eventtype%3Dnotable_suppression-*%20OR%20suppression%3D*)%20$notable_owner$%20$notable_status$%20$notable_dispos$%20$notable_name$%20$user_ident$%20$notable_src$%20$notable_dest$%20$notable_kw$%20$content_type$%0A%7C%20fields%20-%20annotations*%0A%7C%20search%20search_title%3D$row.search_title|s$&amp;earliest=$notable_time.earliest$&amp;latest=$notable_time.latest$</link>
         </drilldown>
       </table>
     </panel>
@@ -614,9 +654,9 @@
       <table id="notable_by_src">
         <title>Notable - By Source</title>
         <search base="baseSearch">
-          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $notable_user$ $notable_src$ $notable_dest$ (comment IN ($notable_kw|s$) OR src IN ($notable_kw|s$) OR dest IN ($notable_kw|s$) OR user IN ($notable_kw|s$)) onglass=$onglass_toggle|s$
+          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $user_ident$ $notable_src$ $notable_dest$ $notable_kw$ onglass=$onglass_toggle|s$
 | search $content_type$
-| search src!="N/A"            
+| search NOT (src IN ("N/A","","unknown"))                        
 | top 50 src
 | fields src count</query>
         </search>
@@ -628,7 +668,7 @@
         <option name="totalsRow">false</option>
         <option name="wrap">true</option>
         <drilldown>
-          <link target="_blank">/app/SplunkEnterpriseSecuritySuite/incident_review?search=$row.src$&amp;earliest=$notable_time.earliest$&amp;latest=$notable_time.latest$</link>
+          <link target="_blank">search?q=%60notable%60%0A%7C%20search%20NOT%20(eventtype%3Dnotable_suppression-*%20OR%20suppression%3D*)%20$notable_owner$%20$notable_status$%20$notable_dispos$%20$notable_name$%20$user_ident$%20$notable_src$%20$notable_dest$%20$notable_kw$%20$content_type$%0A%7C%20fields%20-%20annotations*%0A%7C%20search%20src%3D$row.src|s$&amp;earliest=$notable_time.earliest$&amp;latest=$notable_time.latest$</link>
         </drilldown>
       </table>
     </panel>
@@ -636,9 +676,9 @@
       <table id="notable_by_dest">
         <title>Notable - By Destination</title>
         <search base="baseSearch">
-          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $notable_user$ $notable_src$ $notable_dest$ (comment IN ($notable_kw|s$) OR src IN ($notable_kw|s$) OR dest IN ($notable_kw|s$) OR user IN ($notable_kw|s$)) onglass=$onglass_toggle|s$
+          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $user_ident$ $notable_src$ $notable_dest$ $notable_kw$ onglass=$onglass_toggle|s$
 | search $content_type$
-| search dest!="N/A"            
+| search NOT (dest IN ("N/A","","unknown"))                        
 | top 50 dest
 | fields dest count</query>
         </search>
@@ -650,7 +690,7 @@
         <option name="totalsRow">false</option>
         <option name="wrap">true</option>
         <drilldown>
-          <link target="_blank">/app/SplunkEnterpriseSecuritySuite/incident_review?search=$row.dest$&amp;earliest=$notable_time.earliest$&amp;latest=$notable_time.latest$</link>
+          <link target="_blank">search?q=%60notable%60%0A%7C%20search%20NOT%20(eventtype%3Dnotable_suppression-*%20OR%20suppression%3D*)%20$notable_owner$%20$notable_status$%20$notable_dispos$%20$notable_name$%20$user_ident$%20$notable_src$%20$notable_dest$%20$notable_kw$%20$content_type$%0A%7C%20fields%20-%20annotations*%0A%7C%20search%20dest%3D$row.dest|s$&amp;earliest=$notable_time.earliest$&amp;latest=$notable_time.latest$</link>
         </drilldown>
       </table>
     </panel>
@@ -658,9 +698,9 @@
       <table id="notable_by_user">
         <title>Notable - By User</title>
         <search base="baseSearch">
-          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $notable_user$ $notable_src$ $notable_dest$ (comment IN ($notable_kw|s$) OR src IN ($notable_kw|s$) OR dest IN ($notable_kw|s$) OR user IN ($notable_kw|s$)) onglass=$onglass_toggle|s$
+          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $user_ident$ $notable_src$ $notable_dest$ $notable_kw$ onglass=$onglass_toggle|s$
 | search $content_type$
-| search user!="N/A"            
+| search NOT (user IN ("N/A","","unknown"))                        
 | top 50 user
 | fields user count</query>
         </search>
@@ -672,29 +712,87 @@
         <option name="totalsRow">false</option>
         <option name="wrap">true</option>
         <drilldown>
-          <link target="_blank">/app/SplunkEnterpriseSecuritySuite/incident_review?search=$row.user$&amp;earliest=$notable_time.earliest$&amp;latest=$notable_time.latest$</link>
+          <link target="_blank">search?q=%60notable%60%0A%7C%20search%20NOT%20(eventtype%3Dnotable_suppression-*%20OR%20suppression%3D*)%20$notable_owner$%20$notable_status$%20$notable_dispos$%20$notable_name$%20$user_ident$%20$notable_src$%20$notable_dest$%20$notable_kw$%20$content_type$%0A%7C%20fields%20-%20annotations*%0A%7C%20search%20user%3D$row.user|s$&amp;earliest=$notable_time.earliest$&amp;latest=$notable_time.latest$</link>
         </drilldown>
       </table>
     </panel>
   </row>
   <row id="tab_n_detail_3">
     <panel>
+      <table id="notables_by_file_name">
+        <title>Notables - By Filename</title>
+        <search base="baseSearch">
+          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $user_ident$ $notable_src$ $notable_dest$ $notable_kw$ onglass=$onglass_toggle|s$
+| search $content_type$
+| search NOT (file_name IN ("N/A","","unknown"))                        
+| top 50 file_name
+| fields file_name count</query>
+        </search>
+        <option name="dataOverlayMode">none</option>
+        <option name="drilldown">row</option>
+        <option name="percentagesRow">false</option>
+        <option name="refresh.display">progressbar</option>
+        <option name="rowNumbers">false</option>
+        <option name="totalsRow">false</option>
+        <option name="wrap">true</option>
+        <drilldown>
+          <link target="_blank">search?q=%60notable%60%0A%7C%20search%20NOT%20(eventtype%3Dnotable_suppression-*%20OR%20suppression%3D*)%20$notable_owner$%20$notable_status$%20$notable_dispos$%20$notable_name$%20$user_ident$%20$notable_src$%20$notable_dest$%20$notable_kw$%20$content_type$%0A%7C%20fields%20-%20annotations*%0A%7C%20search%20file_name%3D$row.file_name|s$&amp;earliest=$notable_time.earliest$&amp;latest=$notable_time.latest$</link>
+        </drilldown>
+      </table>
+    </panel>
+    <panel>
+      <table id="notables_by_process">
+        <title>Notables - By Process</title>
+        <search base="baseSearch">
+          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $user_ident$ $notable_src$ $notable_dest$ $notable_kw$ onglass=$onglass_toggle|s$
+| search $content_type$
+| top 50 process
+| fields process count</query>
+        </search>
+        <option name="dataOverlayMode">none</option>
+        <option name="drilldown">row</option>
+        <option name="percentagesRow">false</option>
+        <option name="refresh.display">progressbar</option>
+        <option name="rowNumbers">false</option>
+        <option name="totalsRow">false</option>
+        <option name="wrap">true</option>
+        <drilldown>
+          <link target="_blank">search?q=%60notable%60%0A%7C%20search%20NOT%20(eventtype%3Dnotable_suppression-*%20OR%20suppression%3D*)%20$notable_owner$%20$notable_status$%20$notable_dispos$%20$notable_name$%20$user_ident$%20$notable_src$%20$notable_dest$%20$notable_kw$%20$content_type$%0A%7C%20fields%20-%20annotations*%0A%7C%20search%20process%3D$row.process|s$&amp;earliest=$notable_time.earliest$&amp;latest=$notable_time.latest$</link>
+        </drilldown>
+      </table>
+    </panel>
+    <panel>
+      <table id="notables_by_signature">
+        <title>Notables - By Signature</title>
+        <search base="baseSearch">
+          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $user_ident$ $notable_src$ $notable_dest$ $notable_kw$ onglass=$onglass_toggle|s$
+| search $content_type$
+| search NOT (signature IN ("N/A","","unknown"))            
+| top 50 signature
+| fields signature count</query>
+        </search>
+        <option name="dataOverlayMode">none</option>
+        <option name="drilldown">row</option>
+        <option name="percentagesRow">false</option>
+        <option name="refresh.display">progressbar</option>
+        <option name="rowNumbers">false</option>
+        <option name="totalsRow">false</option>
+        <option name="wrap">true</option>
+        <drilldown>
+          <link target="_blank">search?q=%60notable%60%0A%7C%20search%20NOT%20(eventtype%3Dnotable_suppression-*%20OR%20suppression%3D*)%20$notable_owner$%20$notable_status$%20$notable_dispos$%20$notable_name$%20$user_ident$%20$notable_src$%20$notable_dest$%20$notable_kw$%20$content_type$%0A%7C%20fields%20-%20annotations*%0A%7C%20search%20signature%3D$row.signature|s$&amp;earliest=$notable_time.earliest$&amp;latest=$notable_time.latest$</link>
+        </drilldown>
+      </table>
+    </panel>
+  </row>
+  <row id="tab_n_detail_4">
+    <panel>
       <table id="notables_by_details">
         <title>Notables - Detailed Activity</title>
         <search base="baseSearch">
-          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $notable_user$ $notable_src$ $notable_dest$ (comment IN ($notable_kw|s$) OR src IN ($notable_kw|s$) OR dest IN ($notable_kw|s$) OR user IN ($notable_kw|s$)) onglass=$onglass_toggle|s$
+          <query>| search $notable_owner$ $notable_status$ $notable_dispos$ $notable_name$ $user_ident$ $notable_src$ $notable_dest$ $notable_kw$ onglass=$onglass_toggle|s$
 | search $content_type$            
-| eval firstReview=mvindex(review_time,-1) 
-| eval lastReview=mvindex(review_time,0)
-| eval lastComment=mvindex(comment,-1)
-| stats values(src) as src values(dest) as dest values(user) as user latest(status_label) as status latest(status_end) as end latest(disposition_label) as disposition latest(comment) as comment dc(comment) as comment_count min(firstReview) as firstReview max(lastReview) as lastReview values(owner_realname) as owner_realname by rule_name rule_id _time
-| eval SecondsTriage = firstReview - _time
-| eval SecondsTotal = lastReview - firstReview
-| eval MinTriage = SecondsTriage / 60
-| eval MinTotal = SecondsTotal / 60
-| `uptime2string(SecondsTriage, TimeTriage)` 
-| `uptime2string(SecondsTotal, TimeTotal)` 
-| table _time,rule_name, src, dest, user, status, disposition, , owner_realname, comment, rule_id
+| stats values(src) as src values(dest) as dest values(user) as user values(src_user) as src_user values(process) as process values(parent_process) as parent_process values(file_name) as file_name values(signature) as signature by search_title rule_id _time
+| table _time, search_title, src, dest, user, src_user, process, parent_process, file_name, signature, rule_id
 | sort - _time</query>
         </search>
         <option name="dataOverlayMode">none</option>
@@ -705,7 +803,7 @@
         <option name="totalsRow">false</option>
         <option name="wrap">true</option>
         <drilldown>
-          <link target="_blank">/app/SplunkEnterpriseSecuritySuite/incident_review?earliest=$notable_time.earliest$&amp;latest=$notable_time.latest$&amp;search=rule_id%3D$row.rule_id$</link>
+          <link target="_blank">search?q=%60notable%60%0A%7C%20search%20NOT%20(eventtype%3Dnotable_suppression-*%20OR%20suppression%3D*)%20$notable_owner$%20$notable_status$%20$notable_dispos$%20$notable_name$%20$user_ident$%20$notable_src$%20$notable_dest$%20$notable_kw$%20$content_type$%0A%7C%20fields%20-%20annotations*%0A%7C%20search%20rule_id%3D$row.rule_id|s$&amp;earliest=$notable_time.earliest$&amp;latest=$notable_time.latest$</link>
         </drilldown>
       </table>
     </panel>
