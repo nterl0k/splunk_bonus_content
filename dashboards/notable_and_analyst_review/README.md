@@ -16,7 +16,9 @@ A rough effort at pulling forward analyst and notable metrics for team/detection
      -  It can be helpful during initial content tuning to prevent analyst time waste/metric skew
         -  Create a custom status called "Test Content" and set as a "closed" state
         -  Notables under development or testing can be set to the "Test Content" state.
-   
+   -  "Identities" correlation for User field
+      -   Uses identity model to correlate all known accounts.
+ 
 ## How to build
 - Create a new "classic"(XML) dashboard
 - Name it "notable and analyst review" or whatever you wish
